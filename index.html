@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1대1 격투 게임 (온라인 지원)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        body {
+            background-color: #111;
+            color: white;
+            font-family: 'Press Start 2P', cursive;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        #game-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        canvas {
+            border: 4px solid #333;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+            background: linear-gradient(to bottom, #2b4b6b 0%, #1e1e1e 100%);
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start; /* 상단 정렬로 변경 */
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .health-bar-container {
+            position: relative;
+            width: 100%; /* 부모 div에 맞춤 */
+            height: 30px;
+            background-color: #444;
+            border: 3px solid #fff;
+            border-radius: 4px;
+        }
+
+        .health-bar-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: red;
+        }
+
+        .health-bar {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #4ade80;
+            transition: width 0.2s ease-out;
+        }
+
+        #player-health { right: 0; transform-origin: right; }
+        #enemy-health { left: 0; transform-origin: left; }
+
+        #timer {
+            font-size: 24px;
+            text-shadow: 2px 2px 0 #000;
+            margin-top: 20px; /* 타이머 위치 살짝 아래로 */
+        }
+
+        /* 게임 오버, 메인 메뉴 오버레이 스타일 */
+        .overlay-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+        }
+
+        #result-text {
+            font-size: 32px;
+            color: #fbbf24;
+            margin-bottom: 20px;
+            text-shadow: 3px 3px 0 #000;
+            text-align: center;
+            line-height: 1.5;
+        }
+
+        .menu-btn {
+            padding: 15px 30px;
+            font-family: inherit;
+            font-size: 14px;
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .menu-btn:hover:not(:disabled) { background-color: #2563eb; }
+        .menu-btn:active:not(:disabled) { transform: translateY(2px); }
+        .menu-btn:disabled { background-color: #6b7280; cursor: not-allowed; }
+
+        .controls-info {
+            position: absolute;
+            bottom: -60px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: #888;
+            font-family: sans-serif;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- UI 레이어 (체력바, 닉네임 및 타이머) -->
+        <div id="ui-layer" style="display: none;">
+            <!-- P1 영역 -->
+            <div style="width: 40%; display: flex; flex-direction: column; align-items: flex-start;">
+                <div id="p1-name-display" class="text-white text-sm mb-2 ml-1 font-sans font-bold" style="text-shadow: 2px 2px 0 #000;">플레이어 1</div>
+                <div class="health-bar-container" style="display: flex; justify-content: flex-end;">
+                    <div class="health-bar-bg"></div>
+                    <div id="player-health" class="health-bar"></div>
+                </div>
+            </div>
+            
+            <div id="timer">60</div>
+            
+            <!-- P2 영역 -->
+            <div style="width: 40%; display: flex; flex-direction: column; align-items: flex-end;">
+                <div id="p2-name-display" class="text-white text-sm mb-2 mr-1 font-sans font-bold" style="text-shadow: 2px 2px 0 #000;">플레이어 2</div>
+                <div class="health-bar-container">
+                    <div class="health-bar-bg"></div>
+                    <div id="enemy-health" class="health-bar"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 로그인 화면 -->
+        <div id="login-screen" class="overlay-screen z-30">
+            <h1 class="text-4xl text-yellow-400 mb-8 mt-4" style="text-shadow: 3px 3px 0 #000;">1대1 격투 게임</h1>
+            <div class="bg-gray-800 p-6 rounded-lg shadow-lg flex flex-col items-center gap-4 w-80 border border-gray-600">
+                <h2 class="text-white text-lg font-sans font-bold mb-2">게임 접속</h2>
+                <input type="text" id="login-id" placeholder="사용할 계정(닉네임) 입력" class="w-full text-black p-2 rounded outline-none font-sans font-bold text-center" maxlength="8">
+                <button id="btn-login" class="menu-btn w-full mt-2" style="background-color: #10b981;">접속하기</button>
+                <div id="login-error" class="text-red-400 text-xs font-sans h-4"></div>
+            </div>
+        </div>
+
+        <!-- 메인 메뉴 -->
+        <div id="main-menu" class="overlay-screen overflow-y-auto py-8" style="display: none;">
+            <h1 class="text-4xl text-yellow-400 mb-6 mt-4" style="text-shadow: 3px 3px 0 #000;">1대1 격투 게임</h1>
+            <div id="auth-status" class="text-sm text-gray-400 mb-6">서버 연결 중...</div>
+            
+            <button id="btn-local" class="menu-btn mb-4" style="background-color: #10b981;">로컬 2인용 (같이 하기)</button>
+            
+            <!-- 닉네임 및 무기 선택 UI -->
+            <div class="flex flex-col gap-3 mb-4 w-full max-w-sm px-4">
+                
+                <!-- P1 설정 -->
+                <div class="flex flex-col bg-gray-800 p-3 rounded gap-2 shadow-inner">
+                    <div class="flex justify-between items-center">
+                        <label class="text-white text-xs">내 닉네임 (P1)</label>
+                        <input type="text" id="p1-nickname" value="플레이어 1" class="text-black p-1 rounded text-xs outline-none font-sans font-bold w-32 text-center" maxlength="8">
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <label class="text-white text-xs">내 무기</label>
+                        <select id="p1-weapon" class="text-black p-1 rounded text-xs outline-none font-sans w-32">
+                            <option value="glove">글러브 (기본)</option>
+                            <option value="sword">검 (긴 사거리)</option>
+                            <option value="hammer">해머 (짧고 강함)</option>
+                            <option value="spear">창 (매우 김)</option>
+                            <option value="axe">도끼 (적당/강함)</option>
+                            <option value="wand">지팡이 (엄청 김)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- P2 설정 -->
+                <div class="flex flex-col bg-gray-800 p-3 rounded gap-2 shadow-inner">
+                    <div class="flex justify-between items-center">
+                        <label class="text-white text-xs text-left">상대 닉네임 (P2)<br><span class="text-[8px] text-gray-400">온라인 참가시 무시됨</span></label>
+                        <input type="text" id="p2-nickname" value="플레이어 2" class="text-black p-1 rounded text-xs outline-none font-sans font-bold w-32 text-center" maxlength="8">
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <label class="text-white text-xs">상대 무기</label>
+                        <select id="p2-weapon" class="text-black p-1 rounded text-xs outline-none font-sans w-32">
+                            <option value="glove">글러브 (기본)</option>
+                            <option value="sword">검 (긴 사거리)</option>
+                            <option value="hammer">해머 (짧고 강함)</option>
+                            <option value="spear">창 (매우 김)</option>
+                            <option value="axe">도끼 (적당/강함)</option>
+                            <option value="wand">지팡이 (엄청 김)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="w-full max-w-sm border-t border-gray-600 my-2"></div>
+            
+            <button id="btn-host" class="menu-btn mb-4" disabled>방 만들기 (온라인 호스트)</button>
+            <div class="flex flex-col gap-2 items-center">
+                <div class="flex gap-2">
+                    <input type="text" id="room-input" placeholder="방 번호 입력" class="text-black p-2 rounded outline-none font-sans font-bold" maxlength="4" style="width: 140px; text-align: center; font-size: 16px;">
+                    <button id="btn-join" class="menu-btn m-0" disabled>방 참가</button>
+                </div>
+                <div id="join-error" class="text-red-400 text-xs font-sans h-4"></div>
+            </div>
+        </div>
+
+        <!-- 대기 화면 -->
+        <div id="waiting-screen" class="overlay-screen" style="display:none;">
+            <h2 class="text-2xl text-white mb-4">방 번호: <span id="display-room-code" class="text-yellow-400 text-4xl ml-2"></span></h2>
+            <p class="text-gray-300 font-sans mt-4">친구에게 방 번호를 알려주세요.</p>
+            <p class="text-gray-400 font-sans text-sm mt-2">상대방을 기다리는 중...</p>
+        </div>
+
+        <!-- 게임 결과 화면 -->
+        <div id="game-over-screen" class="overlay-screen" style="display:none;">
+            <div id="result-text">결과</div>
+            <div class="flex gap-4">
+                <button id="btn-restart" class="menu-btn">다시 하기</button>
+                <button id="btn-main-menu" class="menu-btn" style="background-color: #ef4444;">메인 메뉴로</button>
+            </div>
+            <p id="online-restart-msg" class="text-xs text-gray-400 mt-4 font-sans" style="display:none;">방장이 다시 하기를 누르면 게임이 재시작됩니다.</p>
+        </div>
+
+        <!-- 캔버스 -->
+        <canvas></canvas>
+
+        <div id="controls-text" class="controls-info" style="display: none;">
+            <div>[P1] 이동: W A D | 공격: Space</div>
+            <div>[P2] 이동: ↑ ← → | 공격: Enter</div>
+        </div>
+    </div>
+
+    <!-- Firebase 및 게임 로직 통합 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase 초기화 및 설정 ---
+        let auth, db, user;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        try {
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+            if (firebaseConfig) {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                const initAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                };
+                
+                initAuth();
+
+                onAuthStateChanged(auth, (u) => {
+                    user = u;
+                    if (user) {
+                        document.getElementById('auth-status').innerText = "온라인 서버 연결 완료!";
+                        document.getElementById('auth-status').classList.replace('text-gray-400', 'text-green-400');
+                        document.getElementById('btn-host').disabled = false;
+                        document.getElementById('btn-join').disabled = false;
+                    }
+                });
+            } else {
+                document.getElementById('auth-status').innerText = "온라인 기능을 사용할 수 없는 환경입니다.";
+            }
+        } catch (error) {
+            console.error("Firebase 초기화 에러:", error);
+            document.getElementById('auth-status').innerText = "서버 연결 실패 (로컬 플레이만 가능)";
+        }
+
+        // --- 게임 전역 변수 ---
+        const canvas = document.querySelector('canvas');
+        const c = canvas.getContext('2d');
+        canvas.width = 1024;
+        canvas.height = 576;
+        c.fillRect(0, 0, canvas.width, canvas.height);
+
+        const gravity = 0.7;
+        let gameMode = 'local'; // 'local', 'online'
+        let role = null; // 'p1' (호스트), 'p2' (게스트)
+        let roomRef = null;
+        let isGameOver = false;
+        let timer = 60;
+        let timerId;
+        let syncIntervalId = null;
+
+        // 무기 종류별 스탯 정의
+        const weaponStats = {
+            glove: { width: 100, damage: 10, color: 'rgba(255, 255, 255, 0.5)' },
+            sword: { width: 170, damage: 10, color: 'rgba(100, 200, 255, 0.7)' },
+            hammer: { width: 80, damage: 20, color: 'rgba(255, 100, 100, 0.7)' },
+            spear: { width: 240, damage: 6, color: 'rgba(150, 255, 150, 0.7)' },
+            axe: { width: 110, damage: 15, color: 'rgba(255, 165, 0, 0.7)' },
+            wand: { width: 350, damage: 3, color: 'rgba(255, 150, 255, 0.7)' }
+        };
+
+        // --- 게임 클래스 ---
+        class Sprite {
+            constructor({ position, velocity, color = 'red', offset = {x: 0, y: 0} }) {
+                this.position = position;
+                this.velocity = velocity;
+                this.width = 50;
+                this.height = 150;
+                this.lastKey;
+                this.weaponType = 'glove';
+                this.damage = weaponStats.glove.damage;
+                this.attackBox = {
+                    position: { x: this.position.x, y: this.position.y },
+                    offset: offset,
+                    width: weaponStats.glove.width,
+                    height: 50
+                };
+                this.color = color;
+                this.isAttacking = false;
+                this.hitRegistered = false;
+                this.health = 100;
+                this.facing = 'right'; 
+            }
+
+            setWeapon(type) {
+                if (weaponStats[type]) {
+                    this.weaponType = type;
+                    this.attackBox.width = weaponStats[type].width;
+                    this.damage = weaponStats[type].damage;
+                }
+            }
+
+            draw() {
+                c.fillStyle = this.color;
+                c.fillRect(this.position.x, this.position.y, this.width, this.height);
+
+                if (this.isAttacking) {
+                    c.fillStyle = weaponStats[this.weaponType].color;
+                    c.fillRect(
+                        this.attackBox.position.x, 
+                        this.attackBox.position.y, 
+                        this.attackBox.width, 
+                        this.attackBox.height
+                    );
+                }
+            }
+
+            update(applyPhysics = true) {
+                this.draw();
+                
+                this.attackBox.offset.x = this.facing === 'left' ? -this.attackBox.width + this.width : 0;
+                this.attackBox.position.x = this.position.x + this.attackBox.offset.x;
+                this.attackBox.position.y = this.position.y + 10; 
+
+                if (applyPhysics) {
+                    this.position.x += this.velocity.x;
+                    this.position.y += this.velocity.y;
+
+                    if (this.position.y + this.height + this.velocity.y >= canvas.height - 50) {
+                        this.velocity.y = 0;
+                        this.position.y = canvas.height - 50 - this.height; 
+                    } else {
+                        this.velocity.y += gravity;
+                    }
+
+                    if (this.position.x <= 0) {
+                        this.position.x = 0;
+                    } else if (this.position.x + this.width >= canvas.width) {
+                        this.position.x = canvas.width - this.width;
+                    }
+                }
+            }
+
+            attack() {
+                this.isAttacking = true;
+                this.hitRegistered = false; 
+                setTimeout(() => {
+                    this.isAttacking = false;
+                }, 150); 
+            }
+        }
+
+        const player = new Sprite({
+            position: { x: 200, y: 0 },
+            velocity: { x: 0, y: 0 },
+            color: '#3b82f6' 
+        });
+
+        const enemy = new Sprite({
+            position: { x: 774, y: 0 },
+            velocity: { x: 0, y: 0 },
+            color: '#ef4444'
+        });
+        enemy.facing = 'left';
+
+        const keys = {
+            a: { pressed: false },
+            d: { pressed: false },
+            w: { pressed: false },
+            ArrowRight: { pressed: false },
+            ArrowLeft: { pressed: false },
+            ArrowUp: { pressed: false }
+        };
+
+        function rectangularCollision({ rectangle1, rectangle2 }) {
+            return (
+                rectangle1.attackBox.position.x + rectangle1.attackBox.width >= rectangle2.position.x &&
+                rectangle1.attackBox.position.x <= rectangle2.position.x + rectangle2.width &&
+                rectangle1.attackBox.position.y + rectangle1.attackBox.height >= rectangle2.position.y &&
+                rectangle1.attackBox.position.y <= rectangle2.position.y + rectangle2.height
+            );
+        }
+
+        function updateHealthUI() {
+            document.querySelector('#player-health').style.width = Math.max(0, player.health) + '%';
+            document.querySelector('#enemy-health').style.width = Math.max(0, enemy.health) + '%';
+        }
+
+        function determineWinner({ player, enemy, timerId }) {
+            clearTimeout(timerId);
+            document.querySelector('#game-over-screen').style.display = 'flex';
+            isGameOver = true;
+
+            const p1Name = document.getElementById('p1-name-display').innerText;
+            const p2Name = document.getElementById('p2-name-display').innerText;
+            const resultText = document.querySelector('#result-text');
+
+            if (player.health === enemy.health) {
+                resultText.innerHTML = '무승부<br>(DRAW)';
+            } else if (player.health > enemy.health) {
+                resultText.innerHTML = `${p1Name} 승리!`;
+            } else if (player.health < enemy.health) {
+                resultText.innerHTML = `${p2Name} 승리!`;
+            }
+
+            if (gameMode === 'online') {
+                if (role === 'p2') {
+                    document.getElementById('btn-restart').style.display = 'none';
+                    document.getElementById('online-restart-msg').style.display = 'block';
+                } else {
+                    document.getElementById('btn-restart').style.display = 'block';
+                    document.getElementById('online-restart-msg').style.display = 'none';
+                }
+            } else {
+                document.getElementById('btn-restart').style.display = 'block';
+                document.getElementById('online-restart-msg').style.display = 'none';
+            }
+        }
+
+        function decreaseTimer() {
+            if (timer > 0 && !isGameOver) {
+                timerId = setTimeout(decreaseTimer, 1000);
+                
+                if (gameMode === 'local' || role === 'p1') {
+                    timer--;
+                    document.querySelector('#timer').innerHTML = timer;
+                }
+            }
+
+            if (timer === 0) {
+                if (gameMode === 'local' || role === 'p1') {
+                    determineWinner({ player, enemy, timerId });
+                    if (gameMode === 'online' && roomRef) {
+                        updateDoc(roomRef, { status: 'gameover' }).catch(()=>{});
+                    }
+                }
+            }
+        }
+
+        // --- 메인 게임 루프 ---
+        function animate() {
+            window.requestAnimationFrame(animate);
+            
+            c.fillStyle = 'rgba(0, 0, 0, 0.2)'; 
+            c.fillRect(0, 0, canvas.width, canvas.height);
+            
+            c.fillStyle = '#334155';
+            c.fillRect(0, canvas.height - 50, canvas.width, 50);
+
+            if (gameMode === 'local') {
+                player.update(true);
+                enemy.update(true);
+            } else {
+                if (role === 'p1') {
+                    player.update(true);
+                    enemy.update(false); // 상대방은 네트워크 위치로만 렌더링
+                } else if (role === 'p2') {
+                    player.update(false); // 상대방은 네트워크 위치로만 렌더링
+                    enemy.update(true);
+                }
+            }
+
+            if (isGameOver) return; 
+
+            // P1 (호스트) 이동
+            if (gameMode === 'local' || role === 'p1') {
+                player.velocity.x = 0;
+                if (keys.a.pressed && player.lastKey === 'a') {
+                    player.velocity.x = -5;
+                    player.facing = 'left';
+                } else if (keys.d.pressed && player.lastKey === 'd') {
+                    player.velocity.x = 5;
+                    player.facing = 'right';
+                }
+            }
+
+            // P2 (게스트) 이동
+            if (gameMode === 'local' || role === 'p2') {
+                enemy.velocity.x = 0;
+                if (keys.ArrowLeft.pressed && enemy.lastKey === 'ArrowLeft') {
+                    enemy.velocity.x = -5;
+                    enemy.facing = 'left';
+                } else if (keys.ArrowRight.pressed && enemy.lastKey === 'ArrowRight') {
+                    enemy.velocity.x = 5;
+                    enemy.facing = 'right';
+                }
+            }
+
+            // 충돌 감지 로직: P1 공격
+            if (rectangularCollision({ rectangle1: player, rectangle2: enemy }) && player.isAttacking && !player.hitRegistered) {
+                player.hitRegistered = true; 
+                if (gameMode === 'local' || role === 'p1') {
+                    enemy.health -= player.damage;
+                    updateHealthUI();
+                    enemy.color = 'white';
+                    setTimeout(() => { enemy.color = '#ef4444'; }, 50);
+                    
+                    if (gameMode === 'online' && roomRef) {
+                        updateDoc(roomRef, { 'p2.health': enemy.health }).catch(()=>{});
+                    }
+                }
+            }
+
+            // 충돌 감지 로직: P2 공격
+            if (rectangularCollision({ rectangle1: enemy, rectangle2: player }) && enemy.isAttacking && !enemy.hitRegistered) {
+                enemy.hitRegistered = true;
+                if (gameMode === 'local' || role === 'p2') {
+                    player.health -= enemy.damage;
+                    updateHealthUI();
+                    player.color = 'white';
+                    setTimeout(() => { player.color = '#3b82f6'; }, 50);
+
+                    if (gameMode === 'online' && roomRef) {
+                        updateDoc(roomRef, { 'p1.health': player.health }).catch(()=>{});
+                    }
+                }
+            }
+
+            // 게임 종료 조건
+            if (enemy.health <= 0 || player.health <= 0) {
+                if (gameMode === 'local' || role === 'p1') {
+                    determineWinner({ player, enemy, timerId });
+                    if (gameMode === 'online' && roomRef) {
+                        updateDoc(roomRef, { status: 'gameover' }).catch(()=>{});
+                    }
+                }
+            }
+        }
+
+        // --- 멀티플레이 (온라인) 동기화 ---
+        function startOnlineSync() {
+            syncIntervalId = setInterval(() => {
+                if (!roomRef || isGameOver || document.getElementById('waiting-screen').style.display !== 'none') return;
+                
+                const mySprite = role === 'p1' ? player : enemy;
+                updateDoc(roomRef, {
+                    [`${role}.x`]: mySprite.position.x,
+                    [`${role}.y`]: mySprite.position.y,
+                    [`${role}.isAttacking`]: mySprite.isAttacking,
+                    [`${role}.facing`]: mySprite.facing
+                }).catch(()=>{});
+
+                if (role === 'p1') {
+                    updateDoc(roomRef, { timer: timer }).catch(()=>{});
+                }
+            }, 50); 
+
+            // 상대방 데이터 실시간 수신
+            onSnapshot(roomRef, (docSnap) => {
+                const data = docSnap.data();
+                if (!data) return;
+
+                // 게임 시작 및 재시작 트리거
+                if (data.status === 'playing') {
+                    if (document.getElementById('waiting-screen').style.display !== 'none') {
+                        document.getElementById('waiting-screen').style.display = 'none';
+                        startGameInit();
+                    } else if (document.getElementById('game-over-screen').style.display !== 'none') {
+                        resetGameState();
+                    }
+                }
+
+                // 닉네임 동기화 (실시간 렌더링)
+                if (data.p1 && data.p1.nickname) document.getElementById('p1-name-display').innerText = data.p1.nickname;
+                if (data.p2 && data.p2.nickname) document.getElementById('p2-name-display').innerText = data.p2.nickname;
+
+                if (document.getElementById('waiting-screen').style.display !== 'none') return;
+
+                // 상대방 정보 적용
+                const opponentRole = role === 'p1' ? 'p2' : 'p1';
+                const opponentSprite = role === 'p1' ? enemy : player;
+                const opponentData = data[opponentRole];
+
+                if (opponentData) {
+                    opponentSprite.position.x = opponentData.x;
+                    opponentSprite.position.y = opponentData.y;
+                    opponentSprite.isAttacking = opponentData.isAttacking;
+                    opponentSprite.facing = opponentData.facing;
+                    
+                    if (opponentData.weapon && opponentSprite.weaponType !== opponentData.weapon) {
+                        opponentSprite.setWeapon(opponentData.weapon);
+                    }
+
+                    if (opponentSprite.health !== opponentData.health) {
+                        opponentSprite.health = opponentData.health;
+                        updateHealthUI();
+                        opponentSprite.color = 'white';
+                        setTimeout(() => { opponentSprite.color = opponentRole === 'p1' ? '#3b82f6' : '#ef4444'; }, 50);
+                    }
+                }
+
+                // 타이머 동기화
+                if (role === 'p2' && data.timer !== undefined) {
+                    timer = data.timer;
+                    document.querySelector('#timer').innerHTML = timer;
+                }
+
+                // 게임 종료 확인
+                if (data.status === 'gameover' && !isGameOver) {
+                    isGameOver = true;
+                    determineWinner({ player, enemy, timerId });
+                }
+            });
+        }
+
+        // --- 게임 시작 공통 함수 ---
+        function resetGameState() {
+            timer = 60;
+            isGameOver = false;
+            document.querySelector('#timer').innerHTML = timer;
+            document.querySelector('#game-over-screen').style.display = 'none';
+            
+            player.health = 100;
+            enemy.health = 100;
+            updateHealthUI();
+
+            player.position = { x: 200, y: 0 };
+            player.velocity = { x: 0, y: 0 };
+            player.facing = 'right';
+
+            enemy.position = { x: 774, y: 0 };
+            enemy.velocity = { x: 0, y: 0 };
+            enemy.facing = 'left';
+
+            clearTimeout(timerId);
+            decreaseTimer();
+        }
+
+        function startGameInit() {
+            document.getElementById('ui-layer').style.display = 'flex';
+            
+            if (gameMode === 'online') {
+                document.getElementById('controls-text').innerHTML = `
+                    <div>[온라인 모드] 이동: W A D | 공격: Space</div>
+                `;
+            }
+            document.getElementById('controls-text').style.display = 'flex';
+            
+            decreaseTimer();
+            animate();
+        }
+
+        // --- 키보드 이벤트 리스너 ---
+        window.addEventListener('keydown', (event) => {
+            if (isGameOver || document.getElementById('ui-layer').style.display === 'none') return;
+
+            const code = event.code;
+
+            if (gameMode === 'local' || role === 'p1') {
+                switch (code) {
+                    case 'KeyD': keys.d.pressed = true; player.lastKey = 'd'; break;
+                    case 'KeyA': keys.a.pressed = true; player.lastKey = 'a'; break;
+                    case 'KeyW': if (player.velocity.y === 0) player.velocity.y = -15; break;
+                    case 'Space': player.attack(); break;
+                }
+            }
+
+            if (gameMode === 'local') {
+                switch (code) {
+                    case 'ArrowRight': keys.ArrowRight.pressed = true; enemy.lastKey = 'ArrowRight'; break;
+                    case 'ArrowLeft': keys.ArrowLeft.pressed = true; enemy.lastKey = 'ArrowLeft'; break;
+                    case 'ArrowUp': if (enemy.velocity.y === 0) enemy.velocity.y = -15; break;
+                    case 'Enter': case 'NumpadEnter': enemy.attack(); break;
+                }
+            } else if (role === 'p2') {
+                switch (code) {
+                    case 'KeyD': case 'ArrowRight': keys.ArrowRight.pressed = true; enemy.lastKey = 'ArrowRight'; break;
+                    case 'KeyA': case 'ArrowLeft': keys.ArrowLeft.pressed = true; enemy.lastKey = 'ArrowLeft'; break;
+                    case 'KeyW': case 'ArrowUp': if (enemy.velocity.y === 0) enemy.velocity.y = -15; break;
+                    case 'Space': case 'Enter': case 'NumpadEnter': enemy.attack(); break;
+                }
+            }
+        });
+
+        window.addEventListener('keyup', (event) => {
+            const code = event.code;
+            if (gameMode === 'local' || role === 'p1') {
+                switch (code) {
+                    case 'KeyD': keys.d.pressed = false; break;
+                    case 'KeyA': keys.a.pressed = false; break;
+                }
+            }
+            
+            if (gameMode === 'local') {
+                switch (code) {
+                    case 'ArrowRight': keys.ArrowRight.pressed = false; break;
+                    case 'ArrowLeft': keys.ArrowLeft.pressed = false; break;
+                }
+            } else if (role === 'p2') {
+                switch (code) {
+                    case 'KeyD': case 'ArrowRight': keys.ArrowRight.pressed = false; break;
+                    case 'KeyA': case 'ArrowLeft': keys.ArrowLeft.pressed = false; break;
+                }
+            }
+        });
+
+        // --- 로그인 및 메뉴 버튼 로직 ---
+        document.getElementById('login-id').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('btn-login').click();
+            }
+        });
+
+        document.getElementById('btn-login').addEventListener('click', () => {
+            const loginId = document.getElementById('login-id').value.trim();
+            const errorMsg = document.getElementById('login-error');
+            
+            if (!loginId) {
+                errorMsg.innerText = "계정(닉네임)을 입력해주세요!";
+                return;
+            }
+            
+            // 로그인 성공 시 P1 닉네임 입력칸에 계정명 고정
+            document.getElementById('p1-nickname').value = loginId;
+            document.getElementById('p1-nickname').disabled = true; 
+            document.getElementById('p1-nickname').classList.add('bg-gray-400'); // 수정 불가한 느낌 추가
+            
+            // 로그인 창 숨기고 메인 메뉴 표시
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('main-menu').style.display = 'flex';
+        });
+
+        document.getElementById('btn-local').addEventListener('click', () => {
+            document.getElementById('main-menu').style.display = 'none';
+            gameMode = 'local';
+            
+            // 로컬 모드 닉네임 및 무기 적용
+            const p1Nick = document.getElementById('p1-nickname').value || '플레이어 1';
+            const p2Nick = document.getElementById('p2-nickname').value || '플레이어 2';
+            
+            document.getElementById('p1-name-display').innerText = p1Nick;
+            document.getElementById('p2-name-display').innerText = p2Nick;
+            
+            player.setWeapon(document.getElementById('p1-weapon').value);
+            enemy.setWeapon(document.getElementById('p2-weapon').value);
+            
+            startGameInit();
+        });
+
+        document.getElementById('btn-host').addEventListener('click', async () => {
+            if (!user) return;
+            gameMode = 'online';
+            role = 'p1';
+            
+            const myWeapon = document.getElementById('p1-weapon').value;
+            const myNickname = document.getElementById('p1-nickname').value || '플레이어 1';
+            
+            player.setWeapon(myWeapon);
+            document.getElementById('p1-name-display').innerText = myNickname;
+            document.getElementById('p2-name-display').innerText = '대기중...';
+            
+            const roomCode = Math.floor(1000 + Math.random() * 9000).toString();
+            document.getElementById('display-room-code').innerText = roomCode;
+            
+            roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
+            
+            await setDoc(roomRef, {
+                status: 'waiting',
+                p1: { x: 200, y: 0, health: 100, isAttacking: false, facing: 'right', weapon: myWeapon, nickname: myNickname },
+                p2: { x: 774, y: 0, health: 100, isAttacking: false, facing: 'left', weapon: 'glove', nickname: '대기중...' },
+                timer: 60
+            });
+
+            document.getElementById('main-menu').style.display = 'none';
+            document.getElementById('waiting-screen').style.display = 'flex';
+            
+            startOnlineSync();
+        });
+
+        document.getElementById('btn-join').addEventListener('click', async () => {
+            if (!user) return;
+            const code = document.getElementById('room-input').value.trim();
+            const errorMsg = document.getElementById('join-error');
+            
+            if (!code) {
+                errorMsg.innerText = "방 번호를 입력해주세요!";
+                return;
+            }
+            errorMsg.innerText = "";
+            
+            roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', code);
+            const snap = await getDoc(roomRef);
+            
+            if (snap.exists() && snap.data().status === 'waiting') {
+                gameMode = 'online';
+                role = 'p2';
+                
+                const myWeapon = document.getElementById('p1-weapon').value;
+                const myNickname = document.getElementById('p1-nickname').value || '플레이어 2';
+                
+                enemy.setWeapon(myWeapon);
+                
+                await updateDoc(roomRef, { 
+                    status: 'playing',
+                    'p2.weapon': myWeapon,
+                    'p2.nickname': myNickname
+                });
+                document.getElementById('main-menu').style.display = 'none';
+                
+                startOnlineSync();
+            } else {
+                errorMsg.innerText = "방을 찾을 수 없거나 이미 시작되었습니다.";
+            }
+        });
+
+        document.getElementById('btn-restart').addEventListener('click', () => {
+            if (gameMode === 'online' && role === 'p1') {
+                updateDoc(roomRef, { 
+                    status: 'playing',
+                    timer: 60,
+                    'p1.health': 100,
+                    'p1.x': 200,
+                    'p1.y': 0,
+                    'p2.health': 100,
+                    'p2.x': 774,
+                    'p2.y': 0
+                }).catch(()=>{});
+            } else if (gameMode === 'local') {
+                resetGameState();
+            }
+        });
+
+        document.getElementById('btn-main-menu').addEventListener('click', () => {
+            window.location.reload(); 
+        });
+
+    </script>
+</body>
+</html>
